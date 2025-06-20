@@ -2,36 +2,29 @@ import os
 import re
 
 class ComponentLoader:
-    def __init__(self, component_dir):
+    def __init__(self, component_dir: str):
         self.component_dir = component_dir
+        self.components = self._load_components()
 
-    def get_all_irns(self):
-        return {
-            fname.replace(".txt", "")
-            for fname in os.listdir(self.component_dir)
-            if fname.startswith("IRN") and fname.endswith(".txt")
-        }
+    def _load_components(self):
+        components = {}
+        for filename in os.listdir(self.component_dir):
+            if filename.endswith(".txt"):
+                path = os.path.join(self.component_dir, filename)
+                with open(path, "r", encoding="utf-8") as f:
+                    components[filename[:-4]] = f.read()
+        return components
 
-    def get_used_irns(self):
-        used = set()
-        for fname in os.listdir(self.component_dir):
-            if not fname.endswith(".txt"):
-                continue
-            path = os.path.join(self.component_dir, fname)
-            with open(path, "r") as f:
-                content = f.read()
-                used.update(re.findall(r"USE\s+(IRN\d{5})", content))
-        return used
+    def get(self, component_id: str) -> str:
+        return self.components.get(component_id, f"# [Missing component: {component_id}]")
 
     def detect_entry_irns(self):
-        all_irns = self.get_all_irns()
-        used_irns = self.get_used_irns()
-        return all_irns - used_irns
+        all_irns = {cid for cid in self.components if cid.startswith("IRN")}
+        called_irns = set()
 
-    def read_component(self, comp_id):
-        filename = f"{comp_id[:3]}{comp_id[3:]}.txt"
-        path = os.path.join(self.component_dir, filename)
-        if not os.path.isfile(path):
-            return f"# [Missing component: {comp_id}]"
-        with open(path, "r") as f:
-            return f.read().strip()
+        for content in self.components.values():
+            matches = re.findall(r"USE\s+(IRN\d{5})", content)
+            called_irns.update(matches)
+
+        entry_irns = all_irns - called_irns
+        return sorted(entry_irns)
