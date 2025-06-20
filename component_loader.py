@@ -1,39 +1,37 @@
-# component_loader.py
 import os
+import re
 
 class ComponentLoader:
     def __init__(self, component_dir):
         self.component_dir = component_dir
 
-    def get_component_path(self, component_id):
-        filename = f"{component_id[:3]}{component_id[3:]}.txt"
-        return os.path.join(self.component_dir, filename)
-
-    def read_component(self, component_id):
-        path = self.get_component_path(component_id)
-        if not os.path.isfile(path):
-            return None
-        with open(path, 'r') as f:
-            return f.read()
-
-    def list_irns(self):
+    def get_all_irns(self):
         return {
-            filename.replace(".txt", "")
-            for filename in os.listdir(self.component_dir)
-            if filename.startswith("IRN") and filename.endswith(".txt")
+            fname.replace(".txt", "")
+            for fname in os.listdir(self.component_dir)
+            if fname.startswith("IRN") and fname.endswith(".txt")
         }
 
-    def find_used_irns(self):
+    def get_used_irns(self):
         used = set()
-        for filename in os.listdir(self.component_dir):
-            if not filename.endswith(".txt"):
+        for fname in os.listdir(self.component_dir):
+            if not fname.endswith(".txt"):
                 continue
-            with open(os.path.join(self.component_dir, filename), 'r') as f:
+            path = os.path.join(self.component_dir, fname)
+            with open(path, "r") as f:
                 content = f.read()
-                used.update(self.extract_irns(content))
+                used.update(re.findall(r"USE\s+(IRN\d{5})", content))
         return used
 
-    @staticmethod
-    def extract_irns(text):
-        import re
-        return set(re.findall(r"USE\s+(IRN\d{5})", text))
+    def detect_entry_irns(self):
+        all_irns = self.get_all_irns()
+        used_irns = self.get_used_irns()
+        return all_irns - used_irns
+
+    def read_component(self, comp_id):
+        filename = f"{comp_id[:3]}{comp_id[3:]}.txt"
+        path = os.path.join(self.component_dir, filename)
+        if not os.path.isfile(path):
+            return f"# [Missing component: {comp_id}]"
+        with open(path, "r") as f:
+            return f.read().strip()
