@@ -90,4 +90,11 @@ class ChunkStreamer:
         return output
 
     def _extract_called_components(self, text: str, prefixes: list):
-        pa
+        pattern = re.compile(rf"\bUSE\s+({'|'.join(prefixes)})\d{{5}}\b", re.IGNORECASE)
+        return [match.upper() for match in re.findall(r"\bUSE\s+([a-zA-Z]{3}\d{5})", text)]
+
+    def _add_to_call_tree(self, parent, child):
+        if parent not in self.call_tree:
+            self.call_tree[parent] = []
+        if child not in self.call_tree[parent]:
+            self.call_tree[parent].append(child)
