@@ -50,36 +50,38 @@ class ChunkStreamer:
             logger.error(f"❌ Failed to create chunk for {irn_id}: {str(e)}")
             return None
 
-    def _embed_all_nested(self, text: str, parent: str, visited=None):
-        if visited is None:
-            visited = set()
+def _embed_all_nested(self, text: str, parent: str, visited=None):
+    if visited is None:
+        visited = set()
+    output = []
 
-        output = []
-        pattern = re.compile(rf"^(?P<indent>\s*)USE\s+((?P<id>({'mrn|trn|drn|prn|srn|crn|irr|mrr|irn'})\d{{5}}(?:_[a-zA-Z0-9_]+)?))", re.IGNORECASE | re.MULTILINE)
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = re.match(r"^(\s*)USE\s+((mrn|trn|prn|crn|drn|srn|irr|mrr|irn)\d{5}(?:_[a-zA-Z0-9_]+)?)", line, re.IGNORECASE)
+        if match:
+            indent = match.group(1)
+            child_id = match.group(2).upper()
 
-        last_pos = 0
-        for match in pattern.finditer(text):
-            start, end = match.span()
-            indent = match.group("indent")
-            child_id = match.group("id").upper()
+            self._add_to_call_tree(parent, child_id)
 
-            # Append everything before the USE line
-            output.append(text[last_pos:start].rstrip())
+            # Skip this line + all lines that are WHICH IMPORTS/EXPORTS (immediate indented)
+            i += 1
+            while i < len(lines) and re.match(r"^\s*(WHICH IMPORTS|WHICH EXPORTS|FROM|TO|Entity|Work View)", lines[i], re.IGNORECASE):
+                i += 1
 
             if child_id in visited:
                 output.append(f"{indent}# [Skipped duplicate: {child_id}]")
-                last_pos = end
                 continue
-
             visited.add(child_id)
-            self._add_to_call_tree(parent, child_id)
 
             try:
                 comp_text = self.loader.get(child_id)
                 comp_lines = comp_text.strip().splitlines()
 
                 output.append(f"{indent}# Start of {child_id}")
-                output.extend(f"{indent}{line}" for line in comp_lines)
+                output.extend(f"{indent}{l}" for l in comp_lines)
                 output.append(f"{indent}# End of {child_id}")
 
                 if child_id.lower().startswith("irn") and child_id not in self.visited_irns:
@@ -88,19 +90,18 @@ class ChunkStreamer:
                     output.append(f"{indent}# [Nested IRN {child_id} streamed separately]")
                 else:
                     nested_output = self._embed_all_nested(comp_text, parent=child_id, visited=visited)
-                    output.extend(f"{indent}{line}" for line in nested_output)
+                    output.extend(f"{indent}{l}" for l in nested_output)
 
             except FileNotFoundError:
                 output.append(f"{indent}# [Missing component: {child_id}]")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to load {child_id}: {e}")
                 output.append(f"{indent}# [Error loading {child_id}: {str(e)}]")
+        else:
+            output.append(line)
+            i += 1
 
-            last_pos = end
-
-        # Add any remaining text after the last USE
-        output.append(text[last_pos:].rstrip())
-        return output
+    return output
 
     def _extract_called_components(self, text: str, prefixes: list):
         matches = re.findall(
