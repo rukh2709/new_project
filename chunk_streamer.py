@@ -1,4 +1,4 @@
-# chunk_streamer.py (updated _embed_all_nested using correct USE replacement logic)
+# chunk_streamer.py (updated _embed_all_nested using cleaned file names correctly)
 import os
 import re
 import logging
@@ -43,40 +43,56 @@ class ChunkStreamer:
         output = []
 
         lines = text.splitlines()
-        for line in lines:
-            match = re.match(r"^\s*USE\s+((mrn|trn|prn|crn|drn|srn|irr|mrr|irn)\d{5}(?:_[a-zA-Z0-9_]+)?)", line.strip(), re.IGNORECASE)
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            match = re.match(r"^(\s*)USE\s+((mrn|trn|prn|crn|drn|srn|irr|mrr|irn)\d{5}(?:_[a-zA-Z0-9_]+)?)", line.strip(), re.IGNORECASE)
             if match:
-                child_id = match.group(1).upper()
-                self._add_to_call_tree(parent, child_id)
+                indent = match.group(1)
+                full_id = match.group(2).upper()
+                comp_id = full_id.split("_")[0]  # e.g., IRN12345_DIRECTABC -> IRN12345
+                self._add_to_call_tree(parent, comp_id)
 
-                if child_id in visited:
-                    output.append(f"# Start of {child_id}")
-                    output.append(f"# [Skipped duplicate: {child_id}]")
-                    output.append(f"# End of {child_id}")
+                if comp_id in visited:
+                    output.append(f"{indent}# [Skipped duplicate: {comp_id}]")
+                    i += 1
                     continue
 
-                visited.add(child_id)
+                visited.add(comp_id)
                 try:
-                    comp_text = self.loader.get(child_id)
-                    output.append(f"# Start of {child_id}")
-                    embedded_block = self._embed_all_nested(comp_text, parent=child_id, visited=visited)
-                    output.extend(embedded_block)
-                    output.append(f"# End of {child_id}")
+                    comp_text = self.loader.get(comp_id)
+                    comp_lines = comp_text.strip().splitlines()
 
-                    if child_id.lower().startswith("irn") and child_id not in self.visited_irns:
-                        logger.info(f"📌 Found nested IRN {child_id} — will generate separate chunk")
-                        self.stream_irn(child_id)
-                        output.append(f"# [Nested IRN {child_id} streamed separately]")
+                    output.append(f"{indent}# Start of {comp_id}")
+                    output.extend(f"{indent}{l}" for l in comp_lines)
+                    output.append(f"{indent}# End of {comp_id}")
+
+                    if comp_id.lower().startswith("irn") and comp_id not in self.visited_irns:
+                        logger.info(f"📌 Found nested IRN {comp_id} — will generate separate chunk")
+                        self.stream_irn(comp_id)
+                        output.append(f"{indent}# [Nested IRN {comp_id} streamed separately]")
+                    else:
+                        nested_output = self._embed_all_nested(comp_text, parent=comp_id, visited=visited)
+                        output.extend(f"{indent}{l}" for l in nested_output)
 
                 except Exception as e:
-                    output.append(f"# Start of {child_id}")
-                    output.append(f"# [Missing component: {child_id}]")
-                    output.append(f"# End of {child_id}")
-                    logger.warning(f"Could not embed {child_id}: {e}")
+                    output.append(f"{indent}# [Missing component: {comp_id}]")
+                    logger.warning(f"Could not embed {comp_id}: {e}")
+
+                i += 1
             else:
                 output.append(line)
+                i += 1
 
         return output
+
+    def _extract_called_components(self, text: str, prefixes: list):
+        matches = re.findall(
+            rf"\bUSE\s+(({ '|'.join(prefixes) })\d{{5}}(?:_[a-zA-Z0-9_]+)?)",
+            text,
+            flags=re.IGNORECASE
+        )
+        return [m[0].upper() for m in matches]
 
     def _add_to_call_tree(self, parent, child):
         if parent not in self.call_tree:
