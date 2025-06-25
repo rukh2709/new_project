@@ -30,13 +30,38 @@ class ComponentLoader:
             return f.read()
 
 
-    def detect_entry_irns(self):
-        all_irns = {cid for cid in self.components if cid.startswith("IRN")}
-        called_irns = set()
+    # def detect_entry_irns(self):
+    #     all_irns = {cid for cid in self.components if cid.startswith("IRN")}
+    #     called_irns = set()
 
-        for content in self.components.values():
-            matches = re.findall(r"USE\s+(IRN\d{5})", content)
-            called_irns.update(matches)
+    #     for content in self.components.values():
+    #         matches = re.findall(r"USE\s+(IRN\d{5})", content)
+    #         called_irns.update(matches)
 
-        entry_irns = all_irns - called_irns
-        return sorted(entry_irns)
+    #     entry_irns = all_irns - called_irns
+    #     return sorted(entry_irns)
+        import os
+
+def detect_entry_irns(component_dir):
+    all_irns = set()
+    used_irns = set()
+
+    for filename in os.listdir(component_dir):
+        if filename.startswith("IRN") and filename.endswith("_cleaned.txt"):
+            irn_id = filename.replace(".txt", "")
+            all_irns.add(irn_id)
+
+        # Scan all files to find used IRNs
+        filepath = os.path.join(component_dir, filename)
+        if not filename.endswith(".txt"):
+            continue
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+            found = re.findall(r"USE\s+(IRN\d{5}(?:_\w+)?)", content)
+            used_irns.update([f.strip() for f in found])
+
+    entry_irns = all_irns - used_irns
+    print(f"\n✅ Entry IRNs detected: {entry_irns}")
+    return entry_irns
+
